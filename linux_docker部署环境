@@ -28,9 +28,9 @@ docker run \
 -d redis \
 --requirepass "password" \
 --appendonly yes
-#Docker安装RabbitMQ
-#docker pull rabbitmq:3.7.17-management
-#docker run -d -p 5672:5672 -p 15672:15672  --name myrabbitmq -d rabbitmq:3.7.17-management
+Docker安装RabbitMQ
+docker pull rabbitmq:management
+docker run -d --hostname test-rabbit --name rabbit -p 15672:15672 -p 5672:5672 rabbitmq:management
 
 #安装java
 tar -zxvf jdk-8u171-linux-x64.tar.gz
