@@ -1,0 +1,83 @@
+#sec
+#安装docker
+sudo yum update
+sudo yum install -y yum-utils device-mapper-persistent-data lvm2
+sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+sudo yum install docker-ce
+sudo systemctl start docker
+sudo systemctl enable docker
+docker version
+#安装mysql
+docker pull mysql:latest
+sudo docker run --name dbtest -p 3306:3306 -v /data1/var/mysql/:/var/lib/mysql -e MYSQL_ROOT_PASSWORD=password -d mysql:latest
+docker start dbtest
+docker exec -it  dbtest bash
+mysql -u root -p
+GRANT  ALL  ON  *.*  TO  'root'@'%'  WITH GRANT OPTION;
+exit;
+#安装redis 配置对外端口16379
+docker pull redis
+mkdir -p /data/redis
+docker run \
+-e TZ="Asia/Shanghai" \
+--restart=always \
+-p 16379:6379 \
+-v /data/redis:/data \
+--privileged=true \
+--name redis \
+-d redis \
+--requirepass "password" \
+--appendonly yes
+#Docker安装RabbitMQ
+#docker pull rabbitmq:3.7.17-management
+#docker run -d -p 5672:5672 -p 15672:15672  --name myrabbitmq -d rabbitmq:3.7.17-management
+
+#安装java
+tar -zxvf jdk-8u171-linux-x64.tar.gz
+vi /etc/profile
+export JAVA_HOME=/home/liu/jdk1.8.0_171
+export PATH=$JAVA_HOME/bin:$PATH
+export CLASSPATH=.:$JAVA_HOME/lib/dt.jar:$JAVA_HOME/lib
+source /etc/profile
+#打包jar包
+mvn install -Dmaven.test.skip=true
+#部署jar包
+nohup java -jar -Dspring.config.location=./application.properties online_zhilu-0.0.1-SNAPSHOT.jar &
+
+#安装ngnix
+yum install gcc-c++
+yum install -y pcre pcre-devel
+yum install -y zlib zlib-devel
+yum install -y openssl openssl-devel
+wget -c https://nginx.org/download/nginx-1.12.0.tar.gz
+tar -zxvf nginx-1.12.0.tar.gz
+cd nginx-1.12.0
+./configure
+make
+make install
+cd /usr/local/nginx/sbin/
+/usr/local/nginx/sbin/nginx -c /usr/local/nginx/conf/nginx.conf
+./nginx -s reload
+
+#开放端口
+firewall-cmd --list-port
+3306/tcp 8090/tcp 80/tcp
+
+
+#防火墙规则配置 只允许本机访问
+#https://blog.csdn.net/m0_43405593/article/details/105894719
+#yum -y install iptables-services
+#vi /etc/sysconfig/iptables
+#
+#*filter
+#:INPUT ACCEPT [0:0]
+#:FORWARD ACCEPT [0:0]
+#:OUTPUT ACCEPT [0:0]
+#-A INPUT -s 192.168.2.115 -p tcp -m tcp --dport 22 -j ACCEPT
+#-A INPUT -s 192.168.2.115 -p tcp -m tcp --dport 80 -j ACCEPT
+#-A INPUT -s 192.168.2.115 -p tcp -m tcp --dport 3360 -j ACCEPT
+#-A INPUT -s 192.168.2.115 -p tcp -m tcp --dport 16379 -j ACCEPT
+#-A INPUT -s 192.168.2.115 -p tcp -m tcp --dport 15672 -j ACCEPT
+#-A INPUT -p tcp -m tcp --dport 22 -j DROP
+#COMMIT
+
