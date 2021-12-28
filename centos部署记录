@@ -1,0 +1,232 @@
+部署过程中遇到很多问题。感谢同学岳明泽的帮助
+
+首先。需要参考
+https://blog.csdn.net/weixin_41474364/article/details/103594622
+
+这里的重点是
+原来 vue.config.js 中配置的代理只是解决了开发环境的跨域，上线时需要配置 nginx 代理！
+
+Nginx.conf配置文件如下：
+这里设置与/api/相关的访问路径 IP：8090
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+
+    #log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+    #                  '$status $body_bytes_sent "$http_referer" '
+    #                  '"$http_user_agent" "$http_x_forwarded_for"';
+
+    #access_log  logs/access.log  main;
+
+    sendfile        on;
+    #tcp_nopush     on;
+
+    #keepalive_timeout  0;
+    keepalive_timeout  65;
+
+    #gzip  on;
+    #upstream lhh{
+    #    server IP:8090;
+    #}
+
+    server {
+        listen        80;
+        location / {
+            root   /home/liu/front_end/dist;
+            index  index.html index.htm;
+        }
+        location /api/ {
+            proxy_pass http://IP:8090/;
+            proxy_redirect default;
+        }
+        error_page   500 502 503 504  /50x.html;
+        location = /50x.html {
+            root   html;
+        }
+
+    }
+
+
+修改完nginx.conf 
+需要在sbin路径下./nginx -s reload
+
+Vue.conf.js
+let proxyObj = {};
+const CompressionPlugin = require("compression-webpack-plugin");
+proxyObj['/ws'] = {
+    ws: true,
+    target: "ws://localhost:8081"
+};
+proxyObj['/'] = {
+    ws: false,
+    target: 'http://IP:8090',
+    changeOrigin: true,
+    pathRewrite: {
+        '^/': ''
+    }
+}
+module.exports = {
+    devServer: {
+        host: 'localhost',
+        port: 8080,
+        proxy: proxyObj
+    },
+    configureWebpack: config => {
+        if (process.env.NODE_ENV === 'production') {
+            return {
+                plugins: [
+                    new CompressionPlugin({
+                        test: /\.js$|\.html$|\.css/,
+                        threshold: 1024,
+                        deleteOriginalAssets: false
+                    })
+                ]
+            }
+        }
+    }
+}
+
+Login.vue中js代码块修改：
+因为前面nginx配置了/api/
+所以这里全加上/api/
+ <script>
+
+    export default {
+        name: "Login",
+        data() {
+            return {
+                loading: false,
+                vcUrl: '/api/verifyCode?time='+new Date(),
+                loginForm: {
+                    username: 'admin',
+                    password: '123',
+                    code:''
+                },
+                checked: true,
+                rules: {
+                    username: [{required: true, message: '请输入用户名', trigger: 'blur'}],
+                    password: [{required: true, message: '请输入密码', trigger: 'blur'}],
+                    code: [{required: true, message: '请输入验证码', trigger: 'blur'}]
+                }
+            }
+        },
+        methods: {
+            updateVerifyCode() {
+                this.vcUrl = '/api/verifyCode?time='+new Date();
+            },
+            submitLogin() {
+                this.$refs.loginForm.validate((valid) => {
+                    if (valid) {
+                        this.loading = true;
+                        this.postRequest('/doLogin', this.loginForm).then(resp => {
+                            this.loading = false;
+                            if (resp) {
+                                this.$store.commit('INIT_CURRENTHR', resp.obj);
+                                window.sessionStorage.setItem("user", JSON.stringify(resp.obj));
+                                let path = this.$route.query.redirect;
+                                this.$router.replace((path == '/' || path == undefined) ? '/home' : path);
+                            }else{
+                                this.vcUrl = '/api/verifyCode?time='+new Date();
+                            }
+                        })
+                    } else {
+                        return false;
+                    }
+                });
+            }
+        }
+    }
+</script>
+
+
+
+
+
+
+Api.js配置
+因为所有请求通过axios发出的。
+而地址是通过${base}解析的。
+因为配置了路径/api/
+所以全加上/api/ 
+这里的方式是设置一个临时变量
+import axios from 'axios'
+import {Message} from 'element-ui';
+import router from '../router'
+import {mymessage} from '@/utils/mymessage';
+
+axios.interceptors.response.use(success => {
+    if (success.status && success.status == 200 && success.data.status == 500) {
+        Message.error({message: success.data.msg})
+        return;
+    }
+    if (success.data.msg) {
+        Message.success({message: success.data.msg})
+    }
+    return success.data;
+}, error => {
+    if (error.response.status == 504 || error.response.status == 404) {
+        Message.error({message: '服务器被吃了( ╯□╰ )'})
+    } else if (error.response.status == 403) {
+        Message.error({message: '权限不足，请联系管理员'})
+    } else if (error.response.status == 401) {
+        mymessage.error({message: error.response.data.msg ? error.response.data.msg : '尚未登录，请登录'})
+        router.replace('/');
+    } else {
+        if (error.response.data.msg) {
+            Message.error({message: error.response.data.msg})
+        } else {
+            Message.error({message: '未知错误!'})
+        }
+    }
+    return;
+})
+
+let base = '';
+let api = '/api/'
+
+export const postKeyValueRequest = (url, params) => {
+    return axios({
+        method: 'post',
+        url: `${base}${api}${url}`,
+        data: params,
+        transformRequest: [function (data) {
+            let ret = '';
+            for (let i in data) {
+                ret += encodeURIComponent(i) + '=' + encodeURIComponent(data[i]) + '&'
+            }
+            return ret;
+        }],
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+    });
+}
+export const postRequest = (url, params) => {
+    return axios({
+        method: 'post',
+        url: `${base}${api}${url}`,
+        data: params
+    })
+}
+export const putRequest = (url, params) => {
+    return axios({
+        method: 'put',
+        url: `${base}${api}${url}`,
+        data: params
+    })
+}
+export const getRequest = (url, params) => {
+    return axios({
+        method: 'get',
+        url: `${base}${api}${url}`,
+        params: params
+    })
+}
+export const deleteRequest = (url, params) => {
+    return axios({
+        method: 'delete',
+        url: `${base}${api}${url}`,
+        params: params
+    })
+}
+
